@@ -1,0 +1,199 @@
+---
+title: "Simulation analysis"
+output:
+  html_document
+---
+
+`kallisto` results are from version 0.42.1
+
+# Preliminaries
+
+Load packages
+
+```{r}
+library("dplyr")
+library("sleuth")
+```
+
+Some constants
+
+```{r}
+# This is the default from 'polyester' (see ?polyester::simulate_experiment )
+MEAN_FL <- 250.0
+# small number for plotting log things
+SMALL <- 1e-2
+```
+
+Get the simulated target names
+
+```{r,cache=TRUE}
+transcripts <- Biostrings::readDNAStringSet("../data/select_transcripts.fa")
+transcript_names <- names(transcripts)
+transcript_ids <- unlist(lapply(transcript_names,
+    function(x) { substr(x, 1, 15) }))
+target_ids <- data.frame(target_id = transcript_ids, stringsAsFactors = FALSE)
+```
+Load the oracle data and munge into a form that `sleuth` likes:
+
+```{r}
+oracle <- read.table("../data/quant_bias_corrected.sf", sep="\t",
+  stringsAsFactors = FALSE)
+colnames(oracle) <- c("target_id", "len", "salmon_tpm", "fpkm", "counts")
+oracle <- oracle %>%
+  select(-c(fpkm)) %>%
+  mutate(eff_len = len - MEAN_FL) %>%
+  mutate(counts = round(counts))
+```
+
+```{r}
+oracle <- inner_join(oracle, target_ids, by = "target_id")
+```
+
+Sanity check to ensure we're not getting fragments from things that have
+effective length <= 0:
+
+```{r}
+oracle %>%
+  filter(counts > 0 & eff_len <= 0)
+```
+
+Compute TPM from the rounded counts to get the _true_ distribution. Note, this
+is going to be slightly different than the one read in.
+
+```{r}
+oracle <- oracle %>%
+  mutate(tpm = counts_to_tpm(counts, eff_len),
+    salmon_tpm = (salmon_tpm / sum(salmon_tpm)) * 1e6 ) %>%
+  mutate(rel_diff = ifelse(tpm > 0, abs(tpm - salmon_tpm) / tpm, NA))
+oracle$rel_diff %>%
+  summary()
+```
+
+```{r}
+oracle_salmon_tpm <- oracle %>%
+  select(-c(tpm)) %>%
+  rename(tpm = salmon_tpm)
+```
+
+```{r}
+oracle <- oracle %>%
+  select(-c(salmon_tpm, rel_diff))
+```
+
+Final sanity check:
+
+```{r}
+oracle %>%
+  summary()
+```
+
+## Load kallisto data
+
+
+```{r}
+kal <- read_kallisto_h5("../kallisto/results/kal_out/abundance.h5", FALSE)
+```
+
+```{r}
+res <- merge_results(list(kal$abundance), c("kallisto"), oracle)
+```
+
+`filtered_summary()` summarizes the results (comparing to oracle). When there is no
+filter given, it uses everything. We used this function in the `kallisto`
+preprint.
+
+```{r}
+res %>%
+  filtered_summary() %>%
+  lapply(print, width = 300)
+```
+
+We can use the filters Rob used in his notebook:
+
+```{r}
+res %>%
+  filtered_summary(tpm_oracle >= 0.01 & est_counts_oracle > 1) %>%
+  lapply(print, width = 300)
+```
+
+## Recreating Rob's analysis
+
+Now, let's look using the (incorrect) TPM:
+
+```{r}
+res_invalid <- merge_results(list(kal$abundance), c("kallisto"),
+  oracle_salmon_tpm)
+```
+
+```{r}
+res_invalid %>%
+  filtered_summary() %>%
+  lapply(print, width = 500)
+```
+
+```{r}
+res_invalid %>%
+  filtered_summary(tpm_oracle >= 0.01 & est_counts_oracle > 1) %>%
+  lapply(print, width = 500)
+```
+
+## Relative difference
+
+```{r}
+rel_diff <- function(x, y) {
+  stopifnot(length(x) == length(y))
+
+  result <- rep(NA_real_, length(x))
+
+  non_zero <- which( x > 0 | y > 0 )
+  both_zero <- setdiff(seq_along(x), non_zero)
+
+  result[both_zero] <- 0.0
+
+  result[non_zero] <- 2 * ((x[non_zero] - y[non_zero]) /
+    (x[non_zero] + y[non_zero]))
+
+  result
+}
+```
+
+## Figures
+
+### TPM
+
+Correlation
+
+```{r,fig.width=14,fig.height=14}
+ggplot(res$m_tpm, aes(log2(oracle + 1), log2(estimate + 1))) +
+  geom_abline(alpha = 0.2, intercept = 0, slope = 1) +
+  geom_point(alpha = 0.3) +
+  theme_bw(20) +
+  xlim(0, 17.5) +
+  ylim(0, 17.5) +
+  facet_wrap(~ method)
+```
+
+Relative difference
+
+```{r}
+rel_diff_tpm <- res$m_tpm %>%
+  group_by(method) %>%
+  mutate(relative_diff = rel_diff(oracle, estimate))
+```
+
+```{r,fig.width=14,fig.height=10}
+ggplot(rel_diff_tpm, aes(oracle, relative_diff)) +
+  geom_point(alpha = 0.2) +
+  theme_bw(20) +
+  scale_x_log10(limits = c(-1, 1e5)) +
+  xlab("oracle TPM") +
+  ylab("relative difference")
+```
+
+```{r,fig.width=14,fig.height=10}
+ggplot(rel_diff_tpm, aes(relative_diff)) +
+  geom_histogram(binwidth = 0.02) +
+  theme_bw(20) +
+  xlab("relative difference") +
+  facet_wrap(~ method)
+```
