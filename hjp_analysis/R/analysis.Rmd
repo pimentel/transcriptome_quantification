@@ -27,7 +27,7 @@ SMALL <- 1e-2
 Get the simulated target names
 
 ```{r,cache=TRUE}
-transcripts <- Biostrings::readDNAStringSet("../data/select_transcripts.fa")
+transcripts <- Biostrings::readDNAStringSet("../../data/select_transcripts.fa")
 transcript_names <- names(transcripts)
 transcript_ids <- unlist(lapply(transcript_names,
     function(x) { substr(x, 1, 15) }))
@@ -36,7 +36,7 @@ target_ids <- data.frame(target_id = transcript_ids, stringsAsFactors = FALSE)
 Load the oracle data and munge into a form that `sleuth` likes:
 
 ```{r}
-oracle <- read.table("../data/quant_bias_corrected.sf", sep="\t",
+oracle <- read.table("../../data/quant_bias_corrected.sf", sep="\t",
   stringsAsFactors = FALSE)
 colnames(oracle) <- c("target_id", "len", "salmon_tpm", "fpkm", "counts")
 oracle <- oracle %>%
@@ -91,7 +91,7 @@ oracle %>%
 
 
 ```{r}
-kal <- read_kallisto_h5("../kallisto/results/kal_out/abundance.h5", FALSE)
+kal <- read_kallisto_h5("../../sim_test_kallisto/abundance.h5", FALSE)
 ```
 
 ```{r}
