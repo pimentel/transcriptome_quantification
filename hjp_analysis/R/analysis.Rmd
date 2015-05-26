@@ -4,7 +4,17 @@ output:
   html_document
 ---
 
-`kallisto` results are from version 0.42.1
+- `kallisto` results are from version 0.42.1
+- `salmon` results are from version 0.3.2
+
+This is a (re-)analysis of [Simon Cockell's](https://github.com/sjcockell)
+[simulation on his
+blog](http://sjcockell.me/2015/05/18/alignment-free-transcriptome-quantification/).
+
+Note that [Rob Patro](http://robpatro.com/) has also done a (re-)analysis of
+this data (link on Simon's Blog). There are some differences in the
+correlation coefficients. These are likely attributed to differences in [Pandas
+and R](http://stats.stackexchange.com/questions/130815/differences-in-spearman-coefficient-between-r-and-pandas).
 
 # Preliminaries
 
@@ -87,57 +97,62 @@ oracle %>%
   summary()
 ```
 
-## Load kallisto data
+## Load kallisto results
 
 
 ```{r}
 kal <- read_kallisto_h5("../../sim_test_kallisto/abundance.h5", FALSE)
 ```
 
-```{r}
-res <- merge_results(list(kal$abundance), c("kallisto"), oracle)
-```
-
-`filtered_summary()` summarizes the results (comparing to oracle). When there is no
-filter given, it uses everything. We used this function in the `kallisto`
-preprint.
+## Load Salmon results
 
 ```{r}
-res %>%
-  filtered_summary() %>%
-  lapply(print, width = 300)
+all_salmon <- lapply(paste0("sim_test_salmon_", 1:10),
+  function(fname)
+  {
+    read_salmon(file.path("..", "..", fname, "quant.sf"))
+  })
 ```
 
-We can use the filters Rob used in his notebook:
+Ensure that all samon are ordered correctly:
 
 ```{r}
-res %>%
-  filtered_summary(tpm_oracle >= 0.01 & est_counts_oracle > 1) %>%
-  lapply(print, width = 300)
+all_salmon %>%
+  lapply(function(x) all.equal(x$target_id, .[[1]]$target_id)) %>%
+  unlist() %>%
+  Reduce(function(x, y) x && y, .)
 ```
 
-## Recreating Rob's analysis
-
-Now, let's look using the (incorrect) TPM:
+Take averages
 
 ```{r}
-res_invalid <- merge_results(list(kal$abundance), c("kallisto"),
-  oracle_salmon_tpm)
+salmon_tpm <- lapply(all_salmon, function(x) x$tpm) %>%
+  as.data.frame() %>%
+  apply(1, mean)
+salmon_counts <- lapply(all_salmon, function(x) x$est_counts) %>%
+  as.data.frame() %>%
+  apply(1, mean)
+salmon_avg <- data.frame(target_id = all_salmon[[1]]$target_id,
+  tpm = salmon_tpm, est_counts = salmon_counts)
 ```
 
-```{r}
-res_invalid %>%
-  filtered_summary() %>%
-  lapply(print, width = 500)
-```
+## Definition of error
 
-```{r}
-res_invalid %>%
-  filtered_summary(tpm_oracle >= 0.01 & est_counts_oracle > 1) %>%
-  lapply(print, width = 500)
-```
+The relative difference is defined as:
 
-## Relative difference
+$$
+d_i = \frac{x_i - y_i}{\frac{1}{2}\left| x_i + y_i\right|}
+$$
+
+where $y_i$ is the true value and $x_i$ is the estimate.
+
+The relative error is similarly defined:
+
+$$
+e_i = \frac{x_i - y_i}{y_i}
+$$
+
+Note that the relative error is undefined when $y_i$ is zero.
 
 ```{r}
 rel_diff <- function(x, y) {
@@ -151,10 +166,42 @@ rel_diff <- function(x, y) {
   result[both_zero] <- 0.0
 
   result[non_zero] <- 2 * ((x[non_zero] - y[non_zero]) /
-    (x[non_zero] + y[non_zero]))
+    abs(x[non_zero] + y[non_zero]))
 
   result
 }
+```
+
+
+## Summarize the data using sleuth
+
+```{r}
+res <- merge_results(list(kal$abundance, salmon_avg), c("kallisto", "salmon_avg"), oracle)
+```
+
+`filtered_summary()` summarizes the results (comparing to oracle). When there is no
+filter given, it uses everything. We used this function in the `kallisto`
+preprint.
+
+```{r}
+res %>%
+  filtered_summary() %>%
+  lapply(print, width = 300) %>%
+  invisible()
+```
+
+`med_rel_diff_no_zeroes` ignores when both the estimate and the truth are zero.
+This is technically perfect, but if many transcripts have no reads mapping to
+them, then it will skew the distribution causing the median to be artificially
+low on the "interesting" transcripts (with expression > 0).
+
+We can use filters similar to what Rob used in his notebook.
+
+```{r}
+res %>%
+  filtered_summary(tpm_oracle >= 0.01 & est_counts_oracle > 1) %>%
+  lapply(print, width = 300) %>%
+  invisible()
 ```
 
 ## Figures
@@ -170,7 +217,7 @@ ggplot(res$m_tpm, aes(log2(oracle + 1), log2(estimate + 1))) +
   theme_bw(20) +
   xlim(0, 17.5) +
   ylim(0, 17.5) +
-  facet_wrap(~ method)
+  facet_wrap(~ method, ncol = 1)
 ```
 
 Relative difference
@@ -181,19 +228,94 @@ rel_diff_tpm <- res$m_tpm %>%
   mutate(relative_diff = rel_diff(oracle, estimate))
 ```
 
-```{r,fig.width=14,fig.height=10}
+```{r,fig.width=14,fig.height=14}
 ggplot(rel_diff_tpm, aes(oracle, relative_diff)) +
   geom_point(alpha = 0.2) +
   theme_bw(20) +
   scale_x_log10(limits = c(-1, 1e5)) +
   xlab("oracle TPM") +
-  ylab("relative difference")
+  ylab("relative difference") +
+  facet_wrap(~ method, ncol = 1)
 ```
 
-```{r,fig.width=14,fig.height=10}
+```{r,fig.width=14,fig.height=14}
 ggplot(rel_diff_tpm, aes(relative_diff)) +
   geom_histogram(binwidth = 0.02) +
   theme_bw(20) +
   xlab("relative difference") +
-  facet_wrap(~ method)
+  facet_wrap(~ method, ncol = 1)
+```
+
+### Counts
+
+Correlation
+
+```{r,fig.width=14,fig.height=14}
+ggplot(res$m_est_counts, aes(log2(oracle + 1), log2(estimate + 1))) +
+  geom_abline(alpha = 0.2, intercept = 0, slope = 1) +
+  geom_point(alpha = 0.3) +
+  theme_bw(20) +
+  xlim(0, 17.5) +
+  ylim(0, 17.5) +
+  facet_wrap(~ method, ncol = 1)
+```
+
+Relative difference
+
+```{r}
+rel_diff_est_counts <- res$m_est_counts %>%
+  group_by(method) %>%
+  mutate(relative_diff = rel_diff(oracle, estimate))
+```
+
+```{r,fig.width=14,fig.height=14}
+ggplot(rel_diff_est_counts, aes(oracle, relative_diff)) +
+  geom_point(alpha = 0.2) +
+  theme_bw(20) +
+  scale_x_log10(limits = c(-1, 1e5)) +
+  xlab("oracle counts") +
+  ylab("relative difference") +
+  facet_wrap(~ method, ncol = 1)
+```
+
+```{r,fig.width=14,fig.height=14}
+ggplot(rel_diff_est_counts, aes(relative_diff)) +
+  geom_histogram(binwidth = 0.02) +
+  theme_bw(20) +
+  xlab("relative difference") +
+  facet_wrap(~ method, ncol = 1)
+```
+
+# Appendix
+
+## Functions from sleuth
+
+```{r}
+sleuth::merge_results
+```
+
+```{r}
+sleuth::filtered_summary
+```
+
+```{r}
+sleuth:::relative_difference
+```
+
+```{r}
+sleuth:::percent_error
+```
+
+```{r}
+sleuth::read_kallisto_h5
+```
+
+```{r}
+sleuth::read_salmon
+```
+
+## Session info
+
+```{r}
+sessionInfo()
 ```
