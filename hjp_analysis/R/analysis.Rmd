@@ -107,6 +107,13 @@ oracle %>%
 kal <- read_kallisto_h5("../../sim_test_kallisto/abundance.h5", FALSE)
 ```
 
+Ensure that the oracle contains all the transcripts we quantified against.
+
+```{r}
+all.equal(sort(kal$abundance$target_id), sort(oracle$target_id))
+```
+
+
 ## Load Salmon results
 
 ```{r}
@@ -137,6 +144,10 @@ salmon_counts <- lapply(all_salmon, function(x) x$est_counts) %>%
   apply(1, mean)
 salmon_avg <- data.frame(target_id = all_salmon[[1]]$target_id,
   tpm = salmon_tpm, est_counts = salmon_counts)
+```
+
+```{r}
+all.equal(sort(kal$abundance$target_id), sort(oracle$target_id))
 ```
 
 ## Definition of error
@@ -316,6 +327,10 @@ sleuth::read_kallisto_h5
 
 ```{r}
 sleuth::read_salmon
+```
+
+```{r}
+sleuth::counts_to_tpm
 ```
 
 ## Session info

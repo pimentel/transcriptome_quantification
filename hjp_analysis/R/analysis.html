@@ -158,6 +158,10 @@ oracle$rel_diff %&gt;%
 <div id="load-kallisto-results" class="section level2">
 <h2>Load kallisto results</h2>
 <pre class="r"><code>kal &lt;- read_kallisto_h5(&quot;../../sim_test_kallisto/abundance.h5&quot;, FALSE)</code></pre>
+<p>Ensure that the oracle contains all the transcripts we quantified against.</p>
+<pre class="r"><code>all.equal(sort(kal$abundance$target_id), sort(oracle$target_id))</code></pre>
+<pre><code>## [1] &quot;Lengths (1129, 913) differ (string compare on first 913)&quot;
+## [2] &quot;771 string mismatches&quot;</code></pre>
 </div>
 <div id="load-salmon-results" class="section level2">
 <h2>Load Salmon results</h2>
@@ -181,6 +185,9 @@ salmon_counts &lt;- lapply(all_salmon, function(x) x$est_counts) %&gt;%
   apply(1, mean)
 salmon_avg &lt;- data.frame(target_id = all_salmon[[1]]$target_id,
   tpm = salmon_tpm, est_counts = salmon_counts)</code></pre>
+<pre class="r"><code>all.equal(sort(kal$abundance$target_id), sort(oracle$target_id))</code></pre>
+<pre><code>## [1] &quot;Lengths (1129, 913) differ (string compare on first 913)&quot;
+## [2] &quot;771 string mismatches&quot;</code></pre>
 </div>
 <div id="definition-of-error" class="section level2">
 <h2>Definition of error</h2>
@@ -459,6 +466,17 @@ e_i = \frac{x_i - y_i}{y_i}
 ##     salmon %&gt;% select(target_id, tpm, est_counts)
 ## }
 ## &lt;environment: namespace:sleuth&gt;</code></pre>
+<pre class="r"><code>sleuth::counts_to_tpm</code></pre>
+<pre><code>## function (est_counts, eff_len) 
+## {
+##     stopifnot(length(eff_len) == length(est_counts))
+##     which_valid &lt;- which(eff_len &gt; 0)
+##     num &lt;- (est_counts/eff_len)
+##     num[-which_valid] &lt;- 0
+##     denom &lt;- sum(num)
+##     (1e+06 * num)/denom
+## }
+## &lt;environment: namespace:sleuth&gt;</code></pre>
 </div>
 <div id="session-info" class="section level2">
 <h2>Session info</h2>
@@ -480,41 +498,13 @@ e_i = \frac{x_i - y_i}{y_i}
 ## [13] vimcom_1.2-3     
 ## 
 ## loaded via a namespace (and not attached):
-##  [1] acepack_1.3-3.3           annotate_1.44.0          
-##  [3] AnnotationDbi_1.28.2      assertthat_0.1           
-##  [5] base64enc_0.1-2           BatchJobs_1.6            
-##  [7] BBmisc_1.9                Biobase_2.26.0           
-##  [9] BiocGenerics_0.12.1       BiocParallel_1.0.3       
-## [11] Biostrings_2.34.1         brew_1.0-6               
-## [13] checkmate_1.5.2           chron_2.3-45             
-## [15] cluster_2.0.1             codetools_0.2-11         
-## [17] colorspace_1.2-6          DBI_0.3.1                
-## [19] DESeq2_1.6.3              digest_0.6.8             
-## [21] evaluate_0.5.5            fail_1.2                 
-## [23] foreach_1.4.2             foreign_0.8-63           
-## [25] formatR_1.1               Formula_1.2-0            
-## [27] genefilter_1.48.1         geneplotter_1.44.0       
-## [29] GenomeInfoDb_1.2.4        GenomicRanges_1.18.4     
-## [31] grid_3.1.2                gtable_0.1.2             
-## [33] Hmisc_3.15-0              htmltools_0.2.6          
-## [35] IRanges_2.0.1             iterators_1.0.7          
-## [37] knitr_1.9                 labeling_0.3             
-## [39] lattice_0.20-31           latticeExtra_0.6-26      
-## [41] lazyeval_0.1.10           limma_3.22.7             
-## [43] locfit_1.5-9.1            logspline_2.1.5          
-## [45] magrittr_1.5              MASS_7.3-40              
-## [47] munsell_0.4.2             nnet_7.3-9               
-## [49] parallel_3.1.2            polyester_1.2.2          
-## [51] proto_0.3-10              RColorBrewer_1.1-2       
-## [53] RcppArmadillo_0.4.650.1.1 rhdf5_2.10.0             
-## [55] rpart_4.1-9               RSQLite_1.0.0            
-## [57] S4Vectors_0.4.0           scales_0.2.4             
-## [59] sendmailR_1.2-1           splines_3.1.2            
-## [61] stats4_3.1.2              stringr_0.6.2            
-## [63] survival_2.38-1           tidyr_0.2.0              
-## [65] tools_3.1.2               XML_3.98-1.1             
-## [67] xtable_1.7-4              XVector_0.6.0            
-## [69] yaml_2.1.13               zlibbioc_1.12.0</code></pre>
+##  [1] assertthat_0.1   chron_2.3-45     codetools_0.2-11 colorspace_1.2-6
+##  [5] DBI_0.3.1        digest_0.6.8     evaluate_0.5.5   formatR_1.1     
+##  [9] grid_3.1.2       gtable_0.1.2     htmltools_0.2.6  knitr_1.9       
+## [13] labeling_0.3     lazyeval_0.1.10  magrittr_1.5     MASS_7.3-40     
+## [17] munsell_0.4.2    parallel_3.1.2   proto_0.3-10     rhdf5_2.10.0    
+## [21] scales_0.2.4     stringr_0.6.2    tools_3.1.2      yaml_2.1.13     
+## [25] zlibbioc_1.12.0</code></pre>
 </div>
 </div>
 
