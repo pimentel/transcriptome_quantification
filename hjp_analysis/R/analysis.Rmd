@@ -37,6 +37,47 @@ MEAN_FL <- 250.0
 SMALL <- 1e-2
 ```
 
+## Load kallisto results
+
+
+```{r}
+kal <- read_kallisto_h5("../../sim_test_kallisto/abundance.h5", FALSE)
+```
+
+## Load Salmon results
+
+```{r}
+all_salmon <- lapply(paste0("sim_test_salmon_", 1:10),
+  function(fname)
+  {
+    read_salmon(file.path("..", "..", fname, "quant.sf"))
+  })
+```
+
+Ensure that all samon are ordered correctly:
+
+```{r}
+all_salmon %>%
+  lapply(function(x) all.equal(x$target_id, .[[1]]$target_id)) %>%
+  unlist() %>%
+  Reduce(function(x, y) x && y, .)
+```
+
+Take averages
+
+```{r}
+salmon_tpm <- lapply(all_salmon, function(x) x$tpm) %>%
+  as.data.frame() %>%
+  apply(1, mean)
+salmon_counts <- lapply(all_salmon, function(x) x$est_counts) %>%
+  as.data.frame() %>%
+  apply(1, mean)
+salmon_avg <- data.frame(target_id = all_salmon[[1]]$target_id,
+  tpm = salmon_tpm, est_counts = salmon_counts)
+```
+
+## Load oracle
+
 Get the simulated target names
 
 ```{r,cache=TRUE}
@@ -58,8 +99,30 @@ oracle <- oracle %>%
   mutate(counts = round(counts))
 ```
 
+The number of targets differs from the FASTA file to the number quantified
+against (thanks, Rob). Because of this issue, we'll do a left join instead of
+an inner join.
+
 ```{r}
-oracle <- inner_join(oracle, target_ids, by = "target_id")
+oracle <- left_join(target_ids, oracle, by = "target_id")
+```
+
+Thus, we have `NA` values for columns where it didn't match the oracle counts.
+
+```{r}
+head(oracle)
+```
+
+Let's just assign zeroes to the effective length and to the counts for the
+transcripts that didn't appear in the dataset that was quantified against.
+
+```{r}
+oracle <- oracle %>%
+  mutate(
+    len = ifelse(is.na(len), 0, len),
+    eff_len = ifelse(is.na(eff_len), 0, eff_len),
+    counts = ifelse(is.na(counts), 0, counts)
+    )
 ```
 
 Sanity check to ensure we're not getting fragments from things that have
@@ -98,52 +161,6 @@ Final sanity check:
 ```{r}
 oracle %>%
   summary()
-```
-
-## Load kallisto results
-
-
-```{r}
-kal <- read_kallisto_h5("../../sim_test_kallisto/abundance.h5", FALSE)
-```
-
-Ensure that the oracle contains all the transcripts we quantified against.
-
-```{r}
-all.equal(sort(kal$abundance$target_id), sort(oracle$target_id))
-```
-
-
-## Load Salmon results
-
-```{r}
-all_salmon <- lapply(paste0("sim_test_salmon_", 1:10),
-  function(fname)
-  {
-    read_salmon(file.path("..", "..", fname, "quant.sf"))
-  })
-```
-
-Ensure that all samon are ordered correctly:
-
-```{r}
-all_salmon %>%
-  lapply(function(x) all.equal(x$target_id, .[[1]]$target_id)) %>%
-  unlist() %>%
-  Reduce(function(x, y) x && y, .)
-```
-
-Take averages
-
-```{r}
-salmon_tpm <- lapply(all_salmon, function(x) x$tpm) %>%
-  as.data.frame() %>%
-  apply(1, mean)
-salmon_counts <- lapply(all_salmon, function(x) x$est_counts) %>%
-  as.data.frame() %>%
-  apply(1, mean)
-salmon_avg <- data.frame(target_id = all_salmon[[1]]$target_id,
-  tpm = salmon_tpm, est_counts = salmon_counts)
 ```
 
 ```{r}
@@ -235,7 +252,8 @@ ggplot(res$m_tpm, aes(log2(oracle + 1), log2(estimate + 1))) +
   facet_wrap(~ method, ncol = 1)
 ```
 
-Relative difference
+#### Relative difference including zeroes
+
 
 ```{r}
 rel_diff_tpm <- res$m_tpm %>%
@@ -260,6 +278,8 @@ ggplot(rel_diff_tpm, aes(relative_diff)) +
   xlab("relative difference") +
   facet_wrap(~ method, ncol = 1)
 ```
+
+#### Relative difference excluding zeroes
 
 ### Counts
 
