@@ -279,8 +279,6 @@ ggplot(rel_diff_tpm, aes(relative_diff)) +
   facet_wrap(~ method, ncol = 1)
 ```
 
-#### Relative difference excluding zeroes
-
 ### Counts
 
 Correlation
